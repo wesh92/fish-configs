@@ -1,3 +1,4 @@
+source /usr/share/cachyos-fish-config/cachyos-config.fish
 source ~/.config/fish/aliases.fish
 
 # Set the GPG TTY for signing commits
@@ -50,10 +51,3 @@ set -g fish_pager_color_completion normal
 set -g fish_pager_color_description 555 yellow
 set -g fish_pager_color_prefix cyan
 set -g fish_pager_color_progress cyan
-
-# pnpm
-set -gx PNPM_HOME "/home/whahn/.local/share/pnpm"
-if not string match -q -- $PNPM_HOME $PATH
-  set -gx PATH "$PNPM_HOME" $PATH
-end
-# pnpm end

@@ -13,6 +13,13 @@ abbr rm 'rm -v'
 abbr cp 'cp -v'
 
 alias push="git push"
+alias zed="zeditor ."
+alias find="fd"
+alias cat="bat"
+fzf_configure_bindings --directory=\cf
+
+set -g EDITOR zeditor
+set fzf_directory_opts --bind "ctrl-o:execute($EDITOR {} &> /dev/tty)"
 
 # `g co`, etc. subcommand expansion with `abbr`.
 function subcommand_abbr
@@ -23,7 +30,7 @@ function subcommand_abbr
   # Check that these strings are safe, since we're going to eval. 👺
   if not string match --regex --quiet '^[a-z]*$' "$short"
     or not string match --regex --quiet '^[a-zA-Z0-9 -]*$' "$long"
-    echo "Scary unsupported alias or expansion $short $long"; exit 1; 
+    echo "Scary unsupported alias or expansion $short $long"; exit 1;
   end
 
   set -l abbr_temp_fn_name (string join "_" "abbr" "$cmd" "$short")
@@ -33,8 +40,8 @@ function subcommand_abbr
       echo $long
     else
       echo $short
-    end; 
-  end; 
+    end;
+  end;
   abbr --add $short --position anywhere --function $abbr_temp_fn_name"
   eval "$abbr_temp_fn"
 end
@@ -82,9 +89,5 @@ subcommand_abbr uv pl "python list"
 subcommand_abbr uv pin "python pin"
 subcommand_abbr uv ve "venv"
 
-# Project Navigation
-function proj
-  cd ~/projects/
-end
 
 #### Additions ####
