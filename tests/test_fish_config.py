@@ -21,6 +21,7 @@ import termios
 
 
 ROOT = Path(__file__).resolve().parents[1]
+CONFIG_FILES = ("config.fish", "aliases.fish", "conf.d/00-cachyos.fish")
 FISH = shutil.which("fish") or "fish"
 BASH = shutil.which("bash") or "bash"
 
@@ -34,7 +35,8 @@ class FishConfigTests(unittest.TestCase):
         self.config_home = self.home / "xdg config"
         self.fish_dir = self.config_home / "fish"
         self.fish_dir.mkdir(parents=True)
-        for filename in ("config.fish", "aliases.fish"):
+        for filename in CONFIG_FILES:
+            (self.fish_dir / filename).parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / filename, self.fish_dir / filename)
         self.env = os.environ.copy()
         for name in ("EDITOR", "VISUAL", "GPG_TTY", "XDG_CONFIG_DIRS"):
@@ -46,6 +48,7 @@ class FishConfigTests(unittest.TestCase):
             XDG_CACHE_HOME=str(self.home / "cache"),
             TERM="xterm-256color",
             FISH_TEST_CONFIG=str(self.fish_dir / "config.fish"),
+            FISH_TEST_EARLY_CONFIG=str(self.fish_dir / "conf.d" / "00-cachyos.fish"),
         )
 
     def fish(self, command, *, interactive=False, no_config=False, stdin=None, env=None):
@@ -80,7 +83,7 @@ class FishConfigTests(unittest.TestCase):
         )
 
     def test_syntax(self):
-        for filename in ("config.fish", "aliases.fish"):
+        for filename in CONFIG_FILES:
             result = subprocess.run(
                 [FISH, "--no-config", "--no-execute", str(ROOT / filename)],
                 capture_output=True,
@@ -107,6 +110,22 @@ class FishConfigTests(unittest.TestCase):
     def test_missing_aliases_is_optional(self):
         (self.fish_dir / "aliases.fish").unlink()
         self.assert_ready(self.fish("echo ready", interactive=True))
+
+    def test_distro_defaults_load_before_pinned_done(self):
+        distro = self.home / "distro defaults.fish"
+        distro.write_text("set -g FISH_TEST_DISTRO_LOADED 1\nset -g __done_version bundled\n")
+        for filename in self.fish_dir.rglob("*.fish"):
+            filename.write_text(filename.read_text().replace(
+                "/usr/share/cachyos-fish-config/cachyos-config.fish", f'"{distro}"'
+            ))
+        conf = self.fish_dir / "conf.d"
+        conf.mkdir(exist_ok=True)
+        (conf / "done.fish").write_text("set -g __done_version pinned\n")
+        self.assert_ready(self.fish(
+            'test "$FISH_TEST_DISTRO_LOADED" = 1; '
+            'and test "$__done_version" = pinned; and echo ready',
+            interactive=True,
+        ))
 
     def test_editor_uses_an_available_exported_command(self):
         expected = next((name for name in ("zeditor", "nvim", "vim", "vi") if shutil.which(name)), None)
@@ -150,13 +169,14 @@ class FishConfigTests(unittest.TestCase):
         empty_bin.mkdir()
         env = dict(self.env, PATH=str(empty_bin))
         # Simulate a plain Arch host even when the test host has CachyOS defaults.
-        config = (self.fish_dir / "config.fish").read_text()
+        early_config = self.fish_dir / "conf.d" / "00-cachyos.fish"
+        config = early_config.read_text()
         config = config.replace(
             "/usr/share/cachyos-fish-config/cachyos-config.fish",
             str(Path(self.temp.name) / "absent-distro-config.fish"),
         )
-        (self.fish_dir / "config.fish").write_text(config)
-        command = 'source "$FISH_TEST_CONFIG"; not set -q EDITOR; and not functions -q cat; and not functions -q find; and echo ready'
+        early_config.write_text(config)
+        command = 'source "$FISH_TEST_EARLY_CONFIG"; source "$FISH_TEST_CONFIG"; not set -q EDITOR; and not functions -q cat; and not functions -q find; and echo ready'
         self.assert_ready(self.fish(command, interactive=True, no_config=True, env=env))
 
     def test_fzf_integration_is_configured_when_plugin_is_present(self):
@@ -256,13 +276,18 @@ bind ctrl-x 'printf "\n__FISH_BUFFER__%s\n" (commandline); commandline --replace
 
     def test_installer_uses_script_directory_and_migrates_legacy_aliases(self):
         (self.fish_dir / "config.fish").write_text("# existing config\n")
+        (self.fish_dir / "conf.d" / "00-cachyos.fish").unlink()
         legacy = self.fish_dir / "conf.d" / "aliases.fish"
-        legacy.parent.mkdir()
+        legacy.parent.mkdir(exist_ok=True)
         legacy.write_text("# old installer aliases\n")
         result = self.installer("--force", "--skip-plugins", "--no-change-shell")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual((self.fish_dir / "config.fish").read_bytes(), (ROOT / "config.fish").read_bytes())
         self.assertEqual((self.fish_dir / "aliases.fish").read_bytes(), (ROOT / "aliases.fish").read_bytes())
+        self.assertEqual(
+            (self.fish_dir / "conf.d" / "00-cachyos.fish").read_bytes(),
+            (ROOT / "conf.d" / "00-cachyos.fish").read_bytes(),
+        )
         self.assertFalse(legacy.exists())
         backups = list(self.config_home.glob("fish.backup.*"))
         self.assertEqual(len(backups), 1)
@@ -366,7 +391,8 @@ bind ctrl-x 'printf "\n__FISH_BUFFER__%s\n" (commandline); commandline --replace
         shutil.copyfile(Path(result.stdout.strip()), functions / "fisher.fish")
         fixture = self.home / "installer checkout"
         fixture.mkdir()
-        for filename in ("setup_fish.sh", "config.fish", "aliases.fish"):
+        for filename in ("setup_fish.sh", *CONFIG_FILES):
+            (fixture / filename).parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / filename, fixture / filename)
         plugins = []
         for name in (("good", "conflict") if conflict else ("good",)):
@@ -385,7 +411,7 @@ bind ctrl-x 'printf "\n__FISH_BUFFER__%s\n" (commandline); commandline --replace
         self.env["FISH_TEST_STARTUP_MARKER"] = str(marker)
         (self.fish_dir / "config.fish").write_text('printf config >> "$FISH_TEST_STARTUP_MARKER"\n')
         conf = self.fish_dir / "conf.d"
-        conf.mkdir()
+        conf.mkdir(exist_ok=True)
         (conf / "custom.fish").write_text('printf confd >> "$FISH_TEST_STARTUP_MARKER"\n')
         result = self.installer("--force", "--no-change-shell", script_dir=fixture)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

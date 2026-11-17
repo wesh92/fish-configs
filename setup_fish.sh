@@ -182,7 +182,7 @@ main() {
     done
 
     local filename
-    for filename in config.fish aliases.fish fish_plugins; do
+    for filename in config.fish aliases.fish conf.d/00-cachyos.fish fish_plugins; do
         [[ -r $SCRIPT_DIR/$filename ]] || die "Missing $SCRIPT_DIR/$filename; run from a complete checkout"
     done
     if [[ $dry_run == true ]]; then
@@ -202,13 +202,14 @@ main() {
         || die 'Fish 4+ is required. Upgrade Fish before installing this configuration.'
     fish --no-config --no-execute "$SCRIPT_DIR/config.fish"
     fish --no-config --no-execute "$SCRIPT_DIR/aliases.fish"
+    fish --no-config --no-execute "$SCRIPT_DIR/conf.d/00-cachyos.fish"
 
     if [[ -d $config_dir && $no_backup == false ]]; then
         backup_dir=$(mktemp -d "$config_dir.backup.XXXXXX")
         cp -a -- "$config_dir/." "$backup_dir/"
         log "Backup: $backup_dir"
     fi
-    install -d -m 0700 "$config_dir"
+    install -d -m 0700 "$config_dir" "$config_dir/conf.d"
     if [[ $skip_plugins == false ]]; then
         # The pinned SSH-agent plugin writes here as soon as Fisher sources it.
         install -d -m 0700 "$HOME/.ssh"
@@ -216,6 +217,7 @@ main() {
     fi
     install -m 0600 "$SCRIPT_DIR/config.fish" "$config_dir/config.fish"
     install -m 0600 "$SCRIPT_DIR/aliases.fish" "$config_dir/aliases.fish"
+    install -m 0600 "$SCRIPT_DIR/conf.d/00-cachyos.fish" "$config_dir/conf.d/00-cachyos.fish"
     # The old installer put this managed file in conf.d, causing double/early loading.
     rm -f -- "$config_dir/conf.d/aliases.fish"
     if [[ $no_change_shell == false ]]; then

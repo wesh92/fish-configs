@@ -45,6 +45,8 @@ def main():
             XDG_DATA_HOME=str(home / "data"),
             XDG_CACHE_HOME=str(home / "cache"),
             TERM="xterm-256color",
+            __done_allow_nongraphical="1",
+            __done_notification_command="true",
         )
         cleanup.callback(stop_test_agent, home)
         if args.install:
@@ -63,19 +65,33 @@ def main():
                     raise RuntimeError(f"Missing installed plugins: {source}. Use --install instead.")
                 shutil.copytree(source, fish_dir / dirname)
             shutil.copyfile(installed_dir / "fish_plugins", fish_dir / "fish_plugins")
-            for filename in ("config.fish", "aliases.fish"):
+            for filename in ("config.fish", "aliases.fish", "conf.d/00-cachyos.fish"):
                 shutil.copyfile(ROOT / filename, fish_dir / filename)
         desired = set((ROOT / "fish_plugins").read_text().splitlines())
         actual = set((fish_dir / "fish_plugins").read_text().splitlines())
         missing = desired - actual
         if missing:
             raise RuntimeError(f"Plugin pins missing from installation: {sorted(missing)}")
+        done_source = fish_dir / "conf.d" / "done.fish"
+        done_version = re.search(r"^set -g __done_version (\S+)$", done_source.read_text(), re.MULTILINE)
+        if not done_version:
+            raise RuntimeError(f"Cannot identify pinned Done version: {done_source}")
+        env["FISH_EXPECT_DONE_VERSION"] = done_version.group(1)
+        env["FISH_EXPECT_DONE_SOURCE"] = str(done_source)
+        done_check = (
+            'test "$__done_version" = "$FISH_EXPECT_DONE_VERSION"; '
+            'and test (functions --details __done_humanize_duration) = "$FISH_EXPECT_DONE_SOURCE"; '
+            'or begin; printf "Done pin overridden: %s from %s\\n" "$__done_version" '
+            '(functions --details __done_humanize_duration) >&2; exit 1; end; '
+            'for handler in __done_started __done_ended; '
+            'test (functions --details $handler) = "$FISH_EXPECT_DONE_SOURCE"; or exit 1; end; '
+        )
         checks = (
             ("non-interactive", ["-c"], 'not set -q GPG_TTY; and echo ready'),
             (
                 "interactive",
                 ["-ic"],
-                'functions -q fzf_configure_bindings nvm _tide_item_git; '
+                done_check + 'functions -q fzf_configure_bindings nvm _tide_item_git; '
                 'and abbr --query git_add git_cp uv_in uv_ve; '
                 'and command -sq "$EDITOR"; '
                 'and bind ctrl-f | string match --quiet "*_fzf_search_directory*"; '
@@ -84,7 +100,7 @@ def main():
             (
                 "login interactive",
                 ["-lic"],
-                'abbr --query uv_ve; and command -sq "$EDITOR"; and echo ready',
+                done_check + 'abbr --query uv_ve; and command -sq "$EDITOR"; and echo ready',
             ),
         )
         for label, flags, command in checks:

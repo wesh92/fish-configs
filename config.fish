@@ -3,11 +3,7 @@ if not status is-interactive
     return
 end
 
-# CachyOS defaults are optional on plain Arch and in minimal containers.
-if test -r /usr/share/cachyos-fish-config/cachyos-config.fish
-    source /usr/share/cachyos-fish-config/cachyos-config.fish
-end
-
+# Distro defaults load earlier from conf.d/00-cachyos.fish, before plugins.
 # Honor XDG_CONFIG_HOME and use the same layout as the installer/Containerfile.
 if test -r "$__fish_config_dir/aliases.fish"
     source "$__fish_config_dir/aliases.fish"
