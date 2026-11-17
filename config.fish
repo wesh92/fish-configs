@@ -1,11 +1,22 @@
-source /usr/share/cachyos-fish-config/cachyos-config.fish
-source ~/.config/fish/aliases.fish
+# Keep prompts, key bindings and abbreviations out of non-interactive commands.
+if not status is-interactive
+    return
+end
 
-# Set the GPG TTY for signing commits
-set -x GPG_TTY (tty)
+# CachyOS defaults are optional on plain Arch and in minimal containers.
+if test -r /usr/share/cachyos-fish-config/cachyos-config.fish
+    source /usr/share/cachyos-fish-config/cachyos-config.fish
+end
 
-# I don't need a prompt symbol for you-got-things-in-yr-stash
-set --erase pure_symbol_git_stash
+# Honor XDG_CONFIG_HOME and use the same layout as the installer/Containerfile.
+if test -r "$__fish_config_dir/aliases.fish"
+    source "$__fish_config_dir/aliases.fish"
+end
+
+# Never export the literal "not a tty" from a non-TTY session.
+if isatty stdin; and command -sq tty
+    set -gx GPG_TTY (command tty)
+end
 
 # Readline colors
 set -g fish_color_autosuggestion 555 yellow
@@ -32,9 +43,8 @@ set -g fish_color_dimmed 555
 set -g fish_color_separator 999
 
 # Git prompt status
-set -g __fish_git_prompt_showdirtystate 'yes'
+set -g __fish_git_prompt_showdirtystate yes
 set -g __fish_git_prompt_showupstream auto
-set -g pure_git_untracked_dirty false
 
 # Status Chars
 #set __fish_git_prompt_char_dirtystate '*'
@@ -42,7 +52,7 @@ set __fish_git_prompt_char_upstream_equal ''
 set __fish_git_prompt_char_upstream_ahead '↑'
 set __fish_git_prompt_char_upstream_behind '↓'
 set __fish_git_prompt_color_branch yellow
-set __fish_git_prompt_color_dirtystate 'red'
+set __fish_git_prompt_color_dirtystate red
 
 set __fish_git_prompt_color_upstream_ahead ffb90f
 set __fish_git_prompt_color_upstream_behind blue
