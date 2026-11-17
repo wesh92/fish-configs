@@ -19,7 +19,7 @@ cleanup() {
         rm -f -- "$bootstrap"
     fi
     if [[ -n $worker_config_home ]]; then
-        rm -f -- "$worker_config_home/fish/fish_variables"
+        rm -f -- "$worker_config_home/fish/fish_variables" "$worker_config_home/fish/fish_plugins"
         rmdir -- "$worker_config_home/fish" "$worker_config_home" 2>/dev/null || true
     fi
     if [[ $result -ne 0 && -n $backup_dir ]]; then
@@ -107,22 +107,33 @@ ensure_dependencies() {
     [[ ${#missing[@]} -eq 0 ]] || die "Still missing dependencies: ${missing[*]}"
 }
 
-# --no-config also skips Fish's default function path on Fish 4.9. Restore only
-# autoload directories, never the old user's config or conf.d startup scripts.
+# Isolate startup files, not universal state: --no-config also disables loading
+# and saving Fisher's universal ownership registry on Fish 4.9.
 clean_fish() {
-    FISH_WORKER_CONFIG_HOME="$worker_config_home" fish --no-config --init-command '
-        set -g fish_function_path "$__fish_config_dir/functions" "$__fish_sysconf_dir/functions" "$__fish_data_dir/vendor_functions.d" "$__fish_data_dir/functions"
-        # __fish_config_dir is already fixed to the real target. Only child
-        # processes (including Fisher download workers) see this empty config.
-        if test -n "$FISH_WORKER_CONFIG_HOME"
-            set -gx XDG_CONFIG_HOME "$FISH_WORKER_CONFIG_HOME"
-        end
+    local target_config_dir
+    target_config_dir=$(cd -- "$config_dir" && pwd)
+    FISH_TARGET_CONFIG_DIR="$target_config_dir" XDG_CONFIG_HOME="$worker_config_home" fish --init-command '
+        set -g fisher_path "$FISH_TARGET_CONFIG_DIR"
+        set -g fish_function_path "$fisher_path/functions" "$__fish_sysconf_dir/functions" "$__fish_data_dir/vendor_functions.d" "$__fish_data_dir/functions"
     ' "$@"
 }
 
 install_plugins() {
     worker_config_home=$(mktemp -d "${TMPDIR:-/tmp}/fish-workers.XXXXXX")
     install -d -m 0700 "$worker_config_home/fish"
+    local target_config_dir state_file
+    target_config_dir=$(cd -- "$config_dir" && pwd)
+    # Fish follows the fish_variables symlink when atomically saving universal
+    # state. Fisher writes its manifest through the other link. No startup code
+    # is linked, so neither this process nor Fisher's workers run the old config.
+    for state_file in fish_variables fish_plugins; do
+        if [[ ! -e $target_config_dir/$state_file && ! -L $target_config_dir/$state_file ]]; then
+            (umask 077; set -C; : > "$target_config_dir/$state_file")
+        fi
+        [[ -f $target_config_dir/$state_file && -w $target_config_dir/$state_file ]] \
+            || die "Fish state file is not a writable regular file: $target_config_dir/$state_file"
+        ln -s -- "$target_config_dir/$state_file" "$worker_config_home/fish/$state_file"
+    done
     if ! clean_fish -c 'functions --query fisher'; then
         bootstrap=$(mktemp "${TMPDIR:-/tmp}/fisher.XXXXXX")
         curl --fail --silent --show-error --location \

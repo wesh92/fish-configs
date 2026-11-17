@@ -338,7 +338,7 @@ bind ctrl-x 'printf "\n__FISH_BUFFER__%s\n" (commandline); commandline --replace
         bootstrap.write_text(
             "function fisher\n"
             "    if string match --quiet 'jorgebucaran/fisher@*' -- \"$argv[2]\"\n"
-            "        funcsave fisher >/dev/null\n"
+            "        functions fisher > \"$fisher_path/functions/fisher.fish\"\n"
             "    else\n"
             "        printf '%s\\n' $argv[2..] > \"$FISH_TEST_PLUGIN_LOG\"\n"
             "        command cp \"$FISH_TEST_PLUGIN_LOG\" \"$__fish_config_dir/fish_plugins\"\n"
@@ -404,6 +404,35 @@ bind ctrl-x 'printf "\n__FISH_BUFFER__%s\n" (commandline); commandline --replace
             (functions / "fixture_conflict.fish").write_text("# User-owned conflicting file\n")
         (fixture / "fish_plugins").write_text("\n".join(plugins) + "\n")
         return fixture, plugins
+
+    def test_real_fisher_persists_registry_and_can_reinstall(self):
+        fixture, plugins = self.prepare_real_fisher_fixture()
+        self.env["FISH_TEST_EXISTING_PLUGIN"] = plugins[0]
+        for _ in range(2):
+            result = self.installer("--force", "--no-change-shell", script_dir=fixture)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assert_ready(self.fish(
+                'contains -- "$FISH_TEST_EXISTING_PLUGIN" $_fisher_plugins; '
+                'and functions -q fixture_good; and echo ready'
+            ))
+
+    def test_real_fisher_preserves_preinstalled_and_unrelated_plugins(self):
+        fixture, plugins = self.prepare_real_fisher_fixture()
+        unrelated = Path(self.temp.name) / "local-plugin-unrelated"
+        (unrelated / "functions").mkdir(parents=True)
+        (unrelated / "functions/fixture_unrelated.fish").write_text("function fixture_unrelated; end\n")
+        self.env.update(FISH_TEST_EXISTING_PLUGIN=plugins[0], FISH_TEST_UNRELATED_PLUGIN=str(unrelated))
+        seeded = self.fish('fisher install "$FISH_TEST_EXISTING_PLUGIN" "$FISH_TEST_UNRELATED_PLUGIN"')
+        self.assertEqual(seeded.returncode, 0, seeded.stdout + seeded.stderr)
+        result = self.installer("--force", "--no-change-shell", script_dir=fixture)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_ready(self.fish(
+            'contains -- "$FISH_TEST_EXISTING_PLUGIN" $_fisher_plugins; '
+            'and contains -- "$FISH_TEST_UNRELATED_PLUGIN" $_fisher_plugins; '
+            'and functions -q fixture_good fixture_unrelated; and echo ready'
+        ))
+        installed = set((self.fish_dir / "fish_plugins").read_text().splitlines())
+        self.assertEqual(installed, {plugins[0], str(unrelated)})
 
     def test_real_fisher_workers_do_not_run_existing_startup(self):
         fixture, _ = self.prepare_real_fisher_fixture()

@@ -63,13 +63,16 @@ upgrade Fish first. The script does not add the obsolete beta PPA.
 The installer reuses installed Fisher, or bootstraps the pinned Fisher 4.4.8
 revision if none is available, then installs the pinned manifest. It preserves
 unrelated installed plugins instead of removing them.
-Installation runs with startup files disabled and explicitly restores the
-function-autoload paths: Fish 4.9's bare `--no-config` otherwise cannot find
-even the system-installed Fisher.
-Fisher's child download workers receive an empty temporary XDG config directory
-so they cannot execute the old user's startup files either. Every requested pin
-is checked against Fisher's resulting manifest before the new configs are
-copied: Fisher can otherwise report success after a partial installation.
+Installation runs in an otherwise empty temporary XDG config directory, with
+function-autoload paths explicitly pointing at installed Fisher. Only the data
+files `fish_variables` and `fish_plugins` are linked into that directory, and
+`fisher_path` points at the real plugin destination. The parent and Fisher's
+download workers cannot execute the old user's startup files, while Fisher
+still reads and persists its real universal ownership registry and manifest.
+Do not substitute bare `--no-config`: on Fish 4.9 it also disables universal
+state, losing existing/base nvm ownership and forgetting fresh installs.
+Every requested pin is checked against Fisher's resulting manifest before the
+new configs are copied: Fisher can otherwise report partial success.
 
 Existing Fish configuration (including plugin files) is copied to a sibling
 `fish.backup.XXXXXX` directory before changes. The old installer's
@@ -161,8 +164,9 @@ the mounted workspace. The suite covers parsing, distro-before-plugin startup
 ordering, startup with/without optional files and tools, XDG paths containing
 spaces, editor/TTY behavior, real reader
 abbreviation expansion, and installer backup/migration/dry-run behavior.
-When vendor Fisher is available, two additional offline checks use the real
-manager with local fixture plugins to catch worker startup leakage and partial
-installation success; no external fetch is needed for those regressions.
+When vendor Fisher is available, additional offline checks use the real manager
+with local fixture plugins to catch worker startup leakage, partial installation
+success, registry persistence, repeat installation, and preservation of
+preinstalled/unrelated plugins; no external fetch is needed for those checks.
 The full-plugin smoke also verifies the effective Done version, helper and
 event-handler source paths, not just the installed plugin-manifest entries.
