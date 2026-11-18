@@ -1,0 +1,5 @@
+* text=auto
+*.fish text eol=lf
+*.sh text eol=lf
+*.py text eol=lf
+fish_plugins text eol=lf
